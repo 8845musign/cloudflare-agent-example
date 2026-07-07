@@ -142,3 +142,7 @@ dist
 .wrangler
 .dev.vars
 
+
+# vim swap files & local env variants
+.dev.vars.*
+*.swp

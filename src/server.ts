@@ -1,4 +1,4 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import puppeteer, {
   type BrowserWorker,
   type Page
@@ -153,10 +153,12 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
   // ── Chat loop ─────────────────────────────────────────────────────────
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
-    const openai = createOpenAI({ apiKey: this.env.OPENAI_API_KEY });
+    const google = createGoogleGenerativeAI({
+      apiKey: this.env.GOOGLE_GENERATIVE_AI_API_KEY
+    });
 
     const result = streamText({
-      model: openai(this.env.OPENAI_MODEL || "gpt-5-mini"),
+      model: google(this.env.MODEL || "gemini-2.5-flash"),
       system: `You are a coding-assistant-style agent with a persistent workspace of files and a headless browser.
 
 Workspace rules:

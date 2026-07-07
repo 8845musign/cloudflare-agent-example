@@ -10,7 +10,7 @@
 - **Worker + Agents SDK** — `ChatAgent`(Durable Object)が会話・ファイル・ツール実行を担当
 - **仮想ファイルシステム** — DO 内蔵 SQLite の `files` テーブル。メタデータは state sync で UI に即時反映
 - **Browser Rendering** — `@cloudflare/puppeteer` で `fetch_page`(本文抽出)と `screenshot`(PNG 保存)
-- **LLM** — OpenAI `gpt-5-mini`(`wrangler.jsonc` の `OPENAI_MODEL` で変更可)
+- **LLM** — Google Gemini `gemini-2.5-flash`(`wrangler.jsonc` の `MODEL` で変更可)
 - **UI** — React + Vite + kumo。左チャット / 右ファイルパネルの 2 ペイン
 - **承認フロー** — `write_file` / `delete_file` は UI で Approve してから実行(`needsApproval`)
 - **ワークスペース** — `/w/:name` で切替。1 ワークスペース = 1 DO インスタンス
@@ -19,7 +19,7 @@
 
 ```sh
 npm install
-cp .dev.vars.example .dev.vars   # OPENAI_API_KEY を記入
+cp .dev.vars.example .dev.vars   # GOOGLE_GENERATIVE_AI_API_KEY を記入
 npx wrangler login               # Browser Rendering はローカル dev でもリモート実行のため必須
 npm run dev
 ```
@@ -27,7 +27,7 @@ npm run dev
 ## デプロイ
 
 ```sh
-npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put GOOGLE_GENERATIVE_AI_API_KEY
 npm run deploy
 ```
 

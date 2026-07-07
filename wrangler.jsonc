@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "browser": { "binding": "BROWSER", "remote": true },
   "vars": {
-    "OPENAI_MODEL": "gpt-5-mini"
+    "MODEL": "gemini-2.5-flash"
   },
   "assets": {
     "directory": "./public",
