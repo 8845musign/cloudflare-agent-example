@@ -5,8 +5,17 @@ export interface FileMeta {
   updatedAt: string;
 }
 
+export interface NewsRun {
+  status: "running" | "done" | "error";
+  workflowId: string;
+  step?: string;
+  path?: string;
+  error?: string;
+}
+
 export interface WorkspaceState {
   files: FileMeta[];
+  newsRun?: NewsRun;
 }
 
 export interface StoredFile {

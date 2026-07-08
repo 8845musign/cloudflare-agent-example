@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import type { BrowserWorker } from "@cloudflare/puppeteer";
-import type { AgentContext } from "agents";
+import { callable, type AgentContext } from "agents";
 import {
   convertToModelMessages,
   pruneMessages,
@@ -11,12 +11,19 @@ import {
 } from "ai";
 import type { Hono } from "hono";
 import { BrowserClient } from "./browser";
-import { WorkspaceFS, type WorkspaceState } from "./fs";
+import {
+  guessMediaType,
+  normalizePath,
+  WorkspaceFS,
+  type NewsRun,
+  type WorkspaceState
+} from "./fs";
 import { SYSTEM_PROMPT } from "./prompt";
 import { createAgentRoutes, UNMATCHED_HEADER } from "./routes";
 import { createTools } from "./tools";
+import type { NewsProgress } from "./workflows";
 
-export type { FileMeta, WorkspaceState } from "./fs";
+export type { FileMeta, NewsRun, WorkspaceState } from "./fs";
 
 export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
   maxPersistedMessages = 100;
@@ -30,7 +37,7 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
   constructor(ctx: AgentContext, env: Env) {
     super(ctx, env);
     this.fs = new WorkspaceFS(this.ctx.storage.sql, (files) =>
-      this.setState({ files })
+      this.setState({ ...this.state, files })
     );
     this.routes = createAgentRoutes(this.fs);
     this.tools = createTools({
@@ -48,6 +55,63 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     // Fall through to the base chat handler only when no route matched.
     if (response.headers.has(UNMATCHED_HEADER)) return super.onRequest(request);
     return response;
+  }
+
+  // ── News runbook (NewsWorkflow) ─────────────────────────────────────
+
+  @callable()
+  async startNewsRunbook(): Promise<NewsRun> {
+    const current = this.state.newsRun;
+    if (current?.status === "running") return current;
+
+    const workflowId = await this.runWorkflow("NEWS_WORKFLOW", {});
+    const newsRun: NewsRun = { status: "running", workflowId };
+    this.setState({ ...this.state, newsRun });
+    return newsRun;
+  }
+
+  // Called over RPC by NewsWorkflow's "save" step.
+  async writeWorkspaceFile(path: string, content: string) {
+    const normalized = normalizePath(path);
+    if (!normalized) throw new Error(`Invalid path: ${path}`);
+    this.fs.put(
+      normalized,
+      new TextEncoder().encode(content),
+      guessMediaType(normalized)
+    );
+    return { ok: true, path: normalized };
+  }
+
+  private updateNewsRun(workflowId: string, patch: Partial<NewsRun>) {
+    const current = this.state.newsRun;
+    if (current?.workflowId !== workflowId) return;
+    this.setState({ ...this.state, newsRun: { ...current, ...patch } });
+  }
+
+  async onWorkflowProgress(
+    _workflowName: string,
+    workflowId: string,
+    progress: unknown
+  ) {
+    const { message } = progress as NewsProgress;
+    this.updateNewsRun(workflowId, { step: message });
+  }
+
+  async onWorkflowComplete(
+    _workflowName: string,
+    workflowId: string,
+    result?: unknown
+  ) {
+    const { path } = (result ?? {}) as { path?: string };
+    this.updateNewsRun(workflowId, { status: "done", step: undefined, path });
+  }
+
+  async onWorkflowError(
+    _workflowName: string,
+    workflowId: string,
+    error: string
+  ) {
+    this.updateNewsRun(workflowId, { status: "error", step: undefined, error });
   }
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
