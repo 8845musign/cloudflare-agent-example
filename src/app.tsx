@@ -2,7 +2,12 @@ import { Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import type { ChatAgent, FileMeta, WorkspaceState } from "./server/agent";
+import type {
+  ChatAgent,
+  FileMeta,
+  NewsRun,
+  WorkspaceState
+} from "./server/agent";
 import {
   Badge,
   Button,
@@ -33,7 +38,8 @@ import {
   ImageIcon,
   XIcon,
   PaperclipIcon,
-  ArrowSquareOutIcon
+  ArrowSquareOutIcon,
+  NewspaperIcon
 } from "@phosphor-icons/react";
 
 // ── Workspace ─────────────────────────────────────────────────────────
@@ -422,6 +428,7 @@ function Chat() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<FileMeta[]>([]);
+  const [newsRun, setNewsRun] = useState<NewsRun | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -437,6 +444,7 @@ function Chat() {
     ),
     onStateUpdate: useCallback((state: WorkspaceState) => {
       setFiles(state.files ?? []);
+      setNewsRun(state.newsRun);
     }, [])
   });
 
@@ -521,6 +529,14 @@ function Chat() {
     },
     [addFiles]
   );
+
+  const newsRunning = newsRun?.status === "running";
+
+  const startNewsRunbook = useCallback(() => {
+    agent
+      .call("startNewsRunbook")
+      .catch((err) => console.error("Failed to start news runbook:", err));
+  }, [agent]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -805,6 +821,36 @@ function Chat() {
                   e.target.value = "";
                 }}
               />
+
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  icon={<NewspaperIcon size={14} />}
+                  onClick={startNewsRunbook}
+                  disabled={!connected || newsRunning}
+                >
+                  今日のニュースは?
+                </Button>
+                {newsRun &&
+                  (newsRun.status === "running" ? (
+                    <span className="flex items-center gap-1.5 text-xs text-kumo-subtle">
+                      <GearIcon size={12} className="animate-spin" />
+                      {newsRun.step ?? "ニュースランブックを開始しています..."}
+                    </span>
+                  ) : newsRun.status === "done" ? (
+                    <span className="flex items-center gap-1.5 text-xs text-kumo-success">
+                      <CheckCircleIcon size={12} />
+                      保存しました: {newsRun.path}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs text-kumo-danger">
+                      <XCircleIcon size={12} />
+                      失敗しました: {newsRun.error ?? "不明なエラー"}
+                    </span>
+                  ))}
+              </div>
 
               {attachments.length > 0 && (
                 <div className="flex gap-2 mb-2 flex-wrap">

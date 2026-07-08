@@ -13,6 +13,13 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/agents/*"]
   },
+  "workflows": [
+    {
+      "name": "news-workflow",
+      "binding": "NEWS_WORKFLOW",
+      "class_name": "NewsWorkflow"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
