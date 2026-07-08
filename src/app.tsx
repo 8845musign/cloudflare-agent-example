@@ -697,39 +697,56 @@ function Chat() {
                           text: string;
                           state?: "streaming" | "done";
                         };
+                        // A part that reports its own "streaming" state (e.g. a
+                        // running workflow) is never done, even when the chat
+                        // itself is idle.
                         const isDone =
-                          reasoning.state === "done" || !isStreaming;
+                          reasoning.state === "done" ||
+                          (reasoning.state !== "streaming" && !isStreaming);
+                        const latestLine = reasoning.text
+                          .split("\n")
+                          .map((l) => l.trim())
+                          .filter(Boolean)
+                          .at(-1);
                         return (
                           <div key={i} className="flex justify-start">
                             <details
                               className="max-w-[85%] w-full"
                               open={!isDone}
                             >
-                              <summary className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-sm select-none">
-                                <BrainIcon
-                                  size={14}
-                                  className="text-purple-400"
-                                />
-                                <span className="font-medium text-kumo-default">
-                                  Reasoning
-                                </span>
-                                {isDone ? (
-                                  <span className="text-xs text-kumo-success">
-                                    Complete
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-kumo-brand">
-                                    Thinking...
-                                  </span>
-                                )}
-                                <CaretDownIcon
-                                  size={14}
-                                  className="ml-auto text-kumo-inactive"
-                                />
+                              <summary
+                                aria-label="Reasoning"
+                                className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden"
+                              >
+                                <Surface className="px-4 py-2.5 rounded-xl ring ring-kumo-line">
+                                  <div className="flex items-center gap-2">
+                                    <BrainIcon
+                                      size={14}
+                                      className="text-kumo-inactive shrink-0"
+                                    />
+                                    <Text size="xs" variant="secondary" bold>
+                                      Reasoning
+                                    </Text>
+                                    <Badge variant="secondary">
+                                      {isDone ? "Done" : "Thinking..."}
+                                    </Badge>
+                                    {!isDone && latestLine && (
+                                      <span className="flex-1 min-w-0 truncate text-xs text-kumo-subtle">
+                                        {latestLine}
+                                      </span>
+                                    )}
+                                    <CaretDownIcon
+                                      size={14}
+                                      className="ml-auto shrink-0 text-kumo-inactive"
+                                    />
+                                  </div>
+                                </Surface>
                               </summary>
-                              <pre className="mt-2 px-3 py-2 rounded-lg bg-kumo-control text-xs text-kumo-default whitespace-pre-wrap overflow-auto max-h-64">
-                                {reasoning.text}
-                              </pre>
+                              <Surface className="mt-1 px-4 py-2.5 rounded-xl ring ring-kumo-line">
+                                <pre className="text-xs text-kumo-default whitespace-pre-wrap break-words overflow-auto max-h-64 font-mono">
+                                  {reasoning.text}
+                                </pre>
+                              </Surface>
                             </details>
                           </div>
                         );
@@ -827,29 +844,18 @@ function Chat() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  icon={<NewspaperIcon size={14} />}
+                  icon={
+                    newsRunning ? (
+                      <GearIcon size={14} className="animate-spin" />
+                    ) : (
+                      <NewspaperIcon size={14} />
+                    )
+                  }
                   onClick={startNewsRunbook}
                   disabled={!connected || newsRunning}
                 >
                   今日のニュースは?
                 </Button>
-                {newsRun &&
-                  (newsRun.status === "running" ? (
-                    <span className="flex items-center gap-1.5 text-xs text-kumo-subtle">
-                      <GearIcon size={12} className="animate-spin" />
-                      {newsRun.step ?? "ニュースランブックを開始しています..."}
-                    </span>
-                  ) : newsRun.status === "done" ? (
-                    <span className="flex items-center gap-1.5 text-xs text-kumo-success">
-                      <CheckCircleIcon size={12} />
-                      保存しました: {newsRun.path}
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-xs text-kumo-danger">
-                      <XCircleIcon size={12} />
-                      失敗しました: {newsRun.error ?? "不明なエラー"}
-                    </span>
-                  ))}
               </div>
 
               {attachments.length > 0 && (

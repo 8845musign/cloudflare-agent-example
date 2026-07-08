@@ -7,7 +7,9 @@ import {
   pruneMessages,
   stepCountIs,
   streamText,
-  type ToolSet
+  type LanguageModel,
+  type ToolSet,
+  type UIMessage
 } from "ai";
 import type { Hono } from "hono";
 import { BrowserClient } from "./browser";
@@ -57,6 +59,13 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     return response;
   }
 
+  private model(): LanguageModel {
+    const google = createGoogleGenerativeAI({
+      apiKey: this.env.GOOGLE_GENERATIVE_AI_API_KEY
+    });
+    return google(this.env.MODEL || "gemini-2.5-flash");
+  }
+
   // ── News runbook (NewsWorkflow) ─────────────────────────────────────
 
   @callable()
@@ -64,8 +73,22 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     const current = this.state.newsRun;
     if (current?.status === "running") return current;
 
+    // Claim "running" synchronously BEFORE any await, so a second click /
+    // re-entry can't slip past the guard and start a duplicate workflow.
+    // All speaking/thinking ordering is owned by the workflow itself.
+    const messageId = `assistant_news_${Date.now()}`;
+    this.setState({
+      ...this.state,
+      newsRun: { status: "running", workflowId: "", messageId, thinking: "" }
+    });
+
     const workflowId = await this.runWorkflow("NEWS_WORKFLOW", {});
-    const newsRun: NewsRun = { status: "running", workflowId };
+    const newsRun: NewsRun = {
+      status: "running",
+      workflowId,
+      messageId,
+      thinking: ""
+    };
     this.setState({ ...this.state, newsRun });
     return newsRun;
   }
@@ -82,10 +105,37 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     return { ok: true, path: normalized };
   }
 
-  private updateNewsRun(workflowId: string, patch: Partial<NewsRun>) {
-    const current = this.state.newsRun;
-    if (current?.workflowId !== workflowId) return;
-    this.setState({ ...this.state, newsRun: { ...current, ...patch } });
+  // Push the workflow's progress/thinking/result into the chat session as a
+  // single assistant message that is updated in place across the run.
+  private async upsertNewsMessage(
+    run: NewsRun,
+    text: string,
+    thinkingDone: boolean
+  ) {
+    if (!run.messageId) return;
+
+    const parts: UIMessage["parts"] = [];
+    if (run.thinking) {
+      parts.push({
+        type: "reasoning",
+        text: run.thinking,
+        state: thinkingDone ? "done" : "streaming"
+      });
+    }
+    parts.push({ type: "text", text });
+    const message = {
+      id: run.messageId,
+      role: "assistant",
+      parts
+    } as UIMessage;
+
+    // Serialize against any in-flight chat turn before writing history.
+    await this.waitUntilStable({ timeout: 15_000 });
+    const exists = this.messages.some((m) => m.id === run.messageId);
+    const next = exists
+      ? this.messages.map((m) => (m.id === run.messageId ? message : m))
+      : [...this.messages, message];
+    await this.persistMessages(next);
   }
 
   async onWorkflowProgress(
@@ -93,8 +143,31 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     workflowId: string,
     progress: unknown
   ) {
-    const { message } = progress as NewsProgress;
-    this.updateNewsRun(workflowId, { step: message });
+    const current = this.state.newsRun;
+    if (current?.workflowId !== workflowId) return;
+
+    const { message, thinking, say } = progress as NewsProgress;
+
+    // A `say` event is the spoken line: it sets the message text, not reasoning.
+    if (say !== undefined) {
+      const next: NewsRun = { ...current, say };
+      this.setState({ ...this.state, newsRun: next });
+      await this.upsertNewsMessage(next, say, false);
+      return;
+    }
+
+    const entry = thinking
+      ? `${message}\n\n> ${thinking.replace(/\n/g, "\n> ")}`
+      : message;
+    const buffer = current.thinking ? `${current.thinking}\n\n${entry}` : entry;
+    const next: NewsRun = { ...current, step: message, thinking: buffer };
+
+    this.setState({ ...this.state, newsRun: next });
+    await this.upsertNewsMessage(
+      next,
+      current.say ?? "📰 ニュースを収集中…",
+      false
+    );
   }
 
   async onWorkflowComplete(
@@ -102,8 +175,21 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     workflowId: string,
     result?: unknown
   ) {
+    const current = this.state.newsRun;
+    if (current?.workflowId !== workflowId) return;
+
     const { path } = (result ?? {}) as { path?: string };
-    this.updateNewsRun(workflowId, { status: "done", step: undefined, path });
+    let body = "✅ ニュースを保存しました。";
+    const file = path ? this.fs.get(path) : null;
+    if (file) body = new TextDecoder().decode(file.content);
+    if (path) {
+      const url = `/agents/chat-agent/${this.name}/file?path=${encodeURIComponent(path)}&download=1`;
+      body += `\n\n---\n\n[📥 Markdownをダウンロード (${path})](${url})`;
+    }
+
+    const next: NewsRun = { ...current, status: "done", step: undefined, path };
+    this.setState({ ...this.state, newsRun: next });
+    await this.upsertNewsMessage(next, body, true);
   }
 
   async onWorkflowError(
@@ -111,16 +197,26 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     workflowId: string,
     error: string
   ) {
-    this.updateNewsRun(workflowId, { status: "error", step: undefined, error });
+    const current = this.state.newsRun;
+    if (current?.workflowId !== workflowId) return;
+
+    const next: NewsRun = {
+      ...current,
+      status: "error",
+      step: undefined,
+      error
+    };
+    this.setState({ ...this.state, newsRun: next });
+    await this.upsertNewsMessage(
+      next,
+      `❌ ニュース収集に失敗しました: ${error}`,
+      true
+    );
   }
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
-    const google = createGoogleGenerativeAI({
-      apiKey: this.env.GOOGLE_GENERATIVE_AI_API_KEY
-    });
-
     const result = streamText({
-      model: google(this.env.MODEL || "gemini-2.5-flash"),
+      model: this.model(),
       system: SYSTEM_PROMPT,
       messages: pruneMessages({
         messages: await convertToModelMessages(this.messages),

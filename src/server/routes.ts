@@ -14,13 +14,18 @@ export function createAgentRoutes(fs: WorkspaceFS): Hono {
   app.get("/agents/:agent/:name/file", (c) => {
     const path = normalizePath(c.req.query("path") ?? "");
     const file = path ? fs.get(path) : null;
-    if (!file) return new Response("File not found", { status: 404 });
-    return new Response(file.content, {
-      headers: {
-        "content-type": file.mediaType,
-        "cache-control": "no-store"
-      }
-    });
+    if (!path || !file) return new Response("File not found", { status: 404 });
+    const headers: Record<string, string> = {
+      "content-type": file.mediaType,
+      "cache-control": "no-store"
+    };
+    // ?download=1 forces a download instead of inline rendering.
+    if (c.req.query("download")) {
+      const filename = path.split("/").pop() || "download";
+      headers["content-disposition"] =
+        `attachment; filename="${encodeURIComponent(filename)}"`;
+    }
+    return new Response(file.content, { headers });
   });
 
   app.notFound(
