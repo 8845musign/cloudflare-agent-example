@@ -2,7 +2,7 @@ import { Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import type { ChatAgent, FileMeta, WorkspaceState } from "./server";
+import type { ChatAgent, FileMeta, WorkspaceState } from "./server/agent";
 import {
   Badge,
   Button,
