@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import type { BrowserWorker } from "@cloudflare/puppeteer";
-import { callable, type AgentContext } from "agents";
+import { callable, getAgentByName, type AgentContext } from "agents";
 import {
   convertToModelMessages,
   pruneMessages,
@@ -11,52 +11,65 @@ import {
   type ToolSet,
   type UIMessage
 } from "ai";
-import type { Hono } from "hono";
+import type { ArtifactStore } from "./artifact";
 import { BrowserClient } from "./browser";
 import {
   guessMediaType,
   normalizePath,
-  WorkspaceFS,
+  type AsyncFS,
   type NewsRun,
   type WorkspaceState
 } from "./fs";
 import { SYSTEM_PROMPT } from "./prompt";
-import { createAgentRoutes, UNMATCHED_HEADER } from "./routes";
 import { createTools } from "./tools";
 import type { NewsProgress } from "./workflows";
 
 export type { FileMeta, NewsRun, WorkspaceState } from "./fs";
+
+// Fixed name of the single shared artifact store (see `artifact.ts`).
+const ARTIFACT_NAME = "shared";
 
 export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
   maxPersistedMessages = 100;
   chatRecovery = true;
   initialState: WorkspaceState = { files: [] };
 
-  private readonly fs: WorkspaceFS;
-  private readonly routes: Hono;
+  private readonly fs: AsyncFS;
   private readonly tools: ToolSet;
+  private storePromise?: Promise<DurableObjectStub<ArtifactStore>>;
 
   constructor(ctx: AgentContext, env: Env) {
     super(ctx, env);
-    this.fs = new WorkspaceFS(this.ctx.storage.sql, (files) =>
-      this.setState({ ...this.state, files })
-    );
-    this.routes = createAgentRoutes(this.fs);
+    this.fs = this.artifactFs();
     this.tools = createTools({
       fs: this.fs,
       browser: new BrowserClient(this.env.BROWSER as BrowserWorker)
     });
   }
 
-  onStart() {
-    this.fs.init();
+  // Cached stub for the shared ArtifactStore DO.
+  private store(): Promise<DurableObjectStub<ArtifactStore>> {
+    this.storePromise ??= getAgentByName(this.env.ArtifactStore, ARTIFACT_NAME);
+    return this.storePromise;
   }
 
-  async onRequest(request: Request): Promise<Response> {
-    const response = await this.routes.fetch(request);
-    // Fall through to the base chat handler only when no route matched.
-    if (response.headers.has(UNMATCHED_HEADER)) return super.onRequest(request);
-    return response;
+  // Async filesystem backed by DO-to-DO RPC into the shared ArtifactStore.
+  private artifactFs(): AsyncFS {
+    return {
+      list: async () => (await this.store()).listFiles(),
+      get: async (path) => (await this.store()).readFile(path),
+      put: async (path, content, mediaType) => {
+        // Send a tight ArrayBuffer so a subarray view doesn't drag its whole
+        // backing buffer across the RPC boundary.
+        const buffer =
+          content.byteOffset === 0 &&
+          content.byteLength === content.buffer.byteLength
+            ? (content.buffer as ArrayBuffer)
+            : (content.slice().buffer as ArrayBuffer);
+        await (await this.store()).writeFile(path, buffer, mediaType);
+      },
+      delete: async (path) => (await this.store()).deleteFile(path)
+    };
   }
 
   private model(): LanguageModel {
@@ -93,11 +106,12 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
     return newsRun;
   }
 
-  // Called over RPC by NewsWorkflow's "save" step.
+  // Called over RPC by NewsWorkflow's "save" step. Writes go to the shared
+  // artifact store, same as the chat tools.
   async writeWorkspaceFile(path: string, content: string) {
     const normalized = normalizePath(path);
     if (!normalized) throw new Error(`Invalid path: ${path}`);
-    this.fs.put(
+    await this.fs.put(
       normalized,
       new TextEncoder().encode(content),
       guessMediaType(normalized)
@@ -180,10 +194,10 @@ export class ChatAgent extends AIChatAgent<Env, WorkspaceState> {
 
     const { path } = (result ?? {}) as { path?: string };
     let body = "✅ ニュースを保存しました。";
-    const file = path ? this.fs.get(path) : null;
+    const file = path ? await this.fs.get(path) : null;
     if (file) body = new TextDecoder().decode(file.content);
     if (path) {
-      const url = `/agents/chat-agent/${this.name}/file?path=${encodeURIComponent(path)}&download=1`;
+      const url = `/agents/artifact-store/${ARTIFACT_NAME}/file?path=${encodeURIComponent(path)}&download=1`;
       body += `\n\n---\n\n[📥 Markdownをダウンロード (${path})](${url})`;
     }
 

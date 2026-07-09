@@ -1,10 +1,10 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { guessMediaType, normalizePath, type WorkspaceFS } from "./fs";
+import { guessMediaType, normalizePath, type AsyncFS } from "./fs";
 import type { BrowserClient } from "./browser";
 
 export interface ToolDeps {
-  fs: WorkspaceFS;
+  fs: AsyncFS;
   browser: BrowserClient;
 }
 
@@ -15,7 +15,7 @@ export function createTools({ fs, browser }: ToolDeps): ToolSet {
         "List all files in the workspace with size and last-updated time",
       inputSchema: z.object({}),
       execute: async () => {
-        const files = fs.list();
+        const files = await fs.list();
         return files.length > 0 ? files : "The workspace is empty.";
       }
     }),
@@ -27,7 +27,7 @@ export function createTools({ fs, browser }: ToolDeps): ToolSet {
       }),
       execute: async ({ path }) => {
         const normalized = normalizePath(path);
-        const file = normalized ? fs.get(normalized) : null;
+        const file = normalized ? await fs.get(normalized) : null;
         if (!file || !normalized) {
           return { error: `File not found: ${path}` };
         }
@@ -58,7 +58,7 @@ export function createTools({ fs, browser }: ToolDeps): ToolSet {
       execute: async ({ path, content }) => {
         const normalized = normalizePath(path);
         if (!normalized) return { error: `Invalid path: ${path}` };
-        fs.put(
+        await fs.put(
           normalized,
           new TextEncoder().encode(content),
           guessMediaType(normalized)
@@ -77,10 +77,11 @@ export function createTools({ fs, browser }: ToolDeps): ToolSet {
       needsApproval: true,
       execute: async ({ path }) => {
         const normalized = normalizePath(path);
-        if (!normalized || !fs.get(normalized)) {
+        // Single RPC: delete reports whether the file existed, avoiding a
+        // separate get() that could race another session's mutation.
+        if (!normalized || !(await fs.delete(normalized))) {
           return { error: `File not found: ${path}` };
         }
-        fs.delete(normalized);
         return { ok: true, deleted: normalized };
       }
     }),
@@ -115,7 +116,7 @@ export function createTools({ fs, browser }: ToolDeps): ToolSet {
           const png = await browser.screenshot(url);
           const fallback = `screenshots/${new URL(url).hostname}-${Date.now()}.png`;
           const normalized = normalizePath(path ?? fallback) ?? fallback;
-          fs.put(normalized, png, "image/png");
+          await fs.put(normalized, png, "image/png");
           return { ok: true, url, path: normalized };
         } catch (error) {
           return { error: `Failed to capture ${url}: ${error}` };

@@ -2,6 +2,7 @@ import { routeAgentRequest } from "agents";
 import { Hono } from "hono";
 
 export { ChatAgent } from "./agent";
+export { ArtifactStore } from "./artifact";
 export { NewsWorkflow } from "./workflows";
 
 const app = new Hono<{ Bindings: Env }>();

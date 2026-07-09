@@ -8,6 +8,7 @@ import type {
   NewsRun,
   WorkspaceState
 } from "./server/agent";
+import type { ArtifactStore } from "./server/artifact";
 import {
   Badge,
   Button,
@@ -54,9 +55,13 @@ function getWorkspaceFromUrl(): string {
 
 const WORKSPACE = getWorkspaceFromUrl();
 
+// Artifacts live in a single shared DO ("shared"), not per-workspace, so file
+// content and the file list are served from the artifact-store agent.
+const ARTIFACT_NAME = "shared";
+
 function fileUrl(path: string, version?: string) {
   const v = version ? `&v=${encodeURIComponent(version)}` : "";
-  return `/agents/chat-agent/${WORKSPACE}/file?path=${encodeURIComponent(path)}${v}`;
+  return `/agents/artifact-store/${ARTIFACT_NAME}/file?path=${encodeURIComponent(path)}${v}`;
 }
 
 // ── Attachment helpers ────────────────────────────────────────────────
@@ -442,9 +447,19 @@ function Chat() {
       (error: Event) => console.error("WebSocket error:", error),
       []
     ),
+    // News runbook state is per-workspace, so it comes from the chat agent.
+    onStateUpdate: useCallback((state: WorkspaceState) => {
+      setNewsRun(state.newsRun);
+    }, [])
+  });
+
+  // Subscribe to the shared artifact store for a live file list, independent
+  // of the per-workspace chat connection. Updates from any workspace appear here.
+  useAgent<ArtifactStore, WorkspaceState>({
+    agent: "ArtifactStore",
+    name: ARTIFACT_NAME,
     onStateUpdate: useCallback((state: WorkspaceState) => {
       setFiles(state.files ?? []);
-      setNewsRun(state.newsRun);
     }, [])
   });
 

@@ -26,6 +26,16 @@ export interface StoredFile {
   mediaType: string;
 }
 
+// Async filesystem contract used by tools. Backed either directly by
+// WorkspaceFS or, in the shared-artifact setup, by a DO-to-DO RPC adapter
+// (see `agent.ts`). `delete` returns whether the file existed.
+export interface AsyncFS {
+  list(): Promise<FileMeta[]>;
+  get(path: string): Promise<StoredFile | null>;
+  put(path: string, content: Uint8Array, mediaType: string): Promise<void>;
+  delete(path: string): Promise<boolean>;
+}
+
 const TEXT_MEDIA_TYPES: Record<string, string> = {
   md: "text/markdown",
   txt: "text/plain",
@@ -104,6 +114,13 @@ export class WorkspaceFS {
   }
 
   put(path: string, content: Uint8Array, mediaType: string) {
+    // Normalize to a tight ArrayBuffer: a subarray view would otherwise
+    // persist the whole backing buffer (e.g. after RPC structured-clone).
+    const buffer =
+      content.byteOffset === 0 &&
+      content.byteLength === content.buffer.byteLength
+        ? (content.buffer as ArrayBuffer)
+        : (content.slice().buffer as ArrayBuffer);
     this.sql.exec(
       `INSERT INTO files (path, content, media_type, updated_at)
        VALUES (?, ?, ?, ?)
@@ -112,7 +129,7 @@ export class WorkspaceFS {
          media_type = excluded.media_type,
          updated_at = excluded.updated_at`,
       path,
-      content.buffer as ArrayBuffer,
+      buffer,
       mediaType,
       new Date().toISOString()
     );
