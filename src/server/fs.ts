@@ -11,6 +11,9 @@ export interface NewsRun {
   step?: string;
   path?: string;
   error?: string;
+  messageId?: string; // id of the single chat message updated live for this run
+  thinking?: string; // accumulated progress/thinking shown in the reasoning part
+  say?: string; // current spoken line (message text) while the run is in progress
 }
 
 export interface WorkspaceState {

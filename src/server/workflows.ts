@@ -12,7 +12,14 @@ const TOPICS_URL = "https://news.yahoo.co.jp/topics/top-picks";
 export interface NewsProgress {
   step: string;
   message: string;
+  thinking?: string; // model reasoning captured at this step, if any
+  say?: string; // when set, this becomes the spoken message text (not reasoning)
 }
+
+// Ask Gemini to expose its thinking so we can surface it in the chat session.
+const THINKING_OPTS = {
+  google: { thinkingConfig: { includeThoughts: true } }
+} as const;
 
 const newsItemSchema = z.object({
   title: z.string().describe("記事の見出し"),
@@ -47,10 +54,33 @@ export class NewsWorkflow extends AgentWorkflow<
     return new BrowserClient(this.env.BROWSER as BrowserWorker);
   }
 
+  // A fresh, AI-written greeting each run so the status feels alive.
+  private async introLine(): Promise<string> {
+    try {
+      const { text } = await generateText({
+        model: this.model(),
+        prompt:
+          "あなたはニュース収集エージェントです。これから今日のニュースを集めて要約する作業を始めます。" +
+          "作業を始めることを、フレンドリーな日本語で1文だけ短く宣言してください(15〜30文字程度)。" +
+          "先頭に絵文字を1つだけ付けてよい。宣言文のみを出力し、前置きや引用符は付けないこと。"
+      });
+      return (
+        text.trim().split("\n")[0]?.trim() || "📰 今日のニュースを集めてきます…"
+      );
+    } catch {
+      return "📰 今日のニュースを集めてきます…";
+    }
+  }
+
   async run(
     _event: AgentWorkflowEvent<Record<string, never>>,
     step: AgentWorkflowStep
   ) {
+    // Step 1: speak first. The workflow owns ordering, so the greeting is
+    // guaranteed to land before any thinking/progress.
+    const intro = await step.do("intro", () => this.introLine());
+    await this.reportProgress({ step: "intro", message: "", say: intro });
+
     await this.reportProgress({
       step: "fetch-topics",
       message: "Yahoo!ニュースをブラウザで開いています..."
@@ -81,6 +111,13 @@ export class NewsWorkflow extends AgentWorkflow<
     });
 
     await this.reportProgress({
+      step: "extract-10",
+      message: `ニュース候補を${candidates.length}件抽出しました:\n${candidates
+        .map((c: NewsItem) => `・${c.title}`)
+        .join("\n")}`
+    });
+
+    await this.reportProgress({
       step: "select-3",
       message: "価値のあるニュースを3件選定しています..."
     });
@@ -106,6 +143,17 @@ export class NewsWorkflow extends AgentWorkflow<
       return object.picks.slice(0, 3);
     });
 
+    await this.reportProgress({
+      step: "select-3",
+      message: `価値のある3件を選定しました:\n${picks
+        .map((p, i) => {
+          const t =
+            candidates.find((c: NewsItem) => c.url === p.url)?.title ?? p.url;
+          return `${i + 1}. ${t} — ${p.reason}`;
+        })
+        .join("\n")}`
+    });
+
     const articles: ArticleSummary[] = [];
     for (const [i, pick] of picks.entries()) {
       const candidate = candidates.find((c: NewsItem) => c.url === pick.url);
@@ -117,14 +165,16 @@ export class NewsWorkflow extends AgentWorkflow<
       });
 
       let summary: string;
+      let reasoning: string | undefined;
       try {
-        summary = await step.do(
+        const result = await step.do(
           `read-article-${i + 1}`,
           { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } },
           async () => {
             const article = await this.browser().fetchPage(pick.url);
-            const { text } = await generateText({
+            const { text, reasoningText } = await generateText({
               model: this.model(),
+              providerOptions: THINKING_OPTS,
               prompt: [
                 "以下のニュース記事本文を日本語で3〜4文に要約してください。要約のみを出力すること。",
                 "",
@@ -132,13 +182,21 @@ export class NewsWorkflow extends AgentWorkflow<
                 article.text
               ].join("\n")
             });
-            return text.trim();
+            return { summary: text.trim(), reasoning: reasoningText ?? "" };
           }
         );
+        summary = result.summary;
+        reasoning = result.reasoning || undefined;
       } catch {
         // One unreadable article should not kill the whole runbook.
         summary = candidate?.summary ?? "(記事本文の取得に失敗しました)";
       }
+
+      await this.reportProgress({
+        step: `read-article-${i + 1}`,
+        message: `要約完了 (${i + 1}/${picks.length}): ${title}`,
+        thinking: reasoning
+      });
 
       articles.push({ title, url: pick.url, reason: pick.reason, summary });
     }
