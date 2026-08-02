@@ -1,0 +1,49 @@
+{
+  "name": "cloudflare-think-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "deploy": "vite build && wrangler deploy",
+    "types": "wrangler types env.d.ts --include-runtime false",
+    "check": "oxfmt --check . && oxlint src/ && tsc"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.0",
+    "@ai-sdk/react": "^4.0.0",
+    "@cloudflare/ai-chat": "^0.10.1",
+    "@cloudflare/think": "latest",
+    "@streamdown/code": "^1.1.1",
+    "agents": "^0.20.1",
+    "ai": "^7.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^1.28.0",
+    "motion": "^12.43.0",
+    "nanoid": "^6.0.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "streamdown": "^2.5.0",
+    "tailwind-merge": "^3.6.0",
+    "use-stick-to-bottom": "^1.1.6",
+    "workers-ai-provider": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "latest",
+    "@cloudflare/workers-types": "latest",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "latest",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "tailwindcss": "^4.3.3",
+    "typescript": "latest",
+    "vite": "latest",
+    "wrangler": "latest"
+  }
+}

@@ -1,0 +1,6 @@
+# Local development overrides for memory/wrangler.jsonc.
+# Replace this with your custom AI Gateway name or ID when needed.
+AI_GATEWAY_ID=default
+
+# Optional: override the model in wrangler.jsonc for local development.
+# MODEL=openai/gpt-5.6-luna

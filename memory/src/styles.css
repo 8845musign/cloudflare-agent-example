@@ -1,0 +1,131 @@
+@import "tailwindcss";
+@import "streamdown/styles.css";
+
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+
+:root {
+  --radius: 0.8rem;
+  --background: oklch(0.985 0.004 250);
+  --foreground: oklch(0.22 0.025 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.025 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.025 255);
+  --primary: oklch(0.52 0.18 264);
+  --primary-foreground: oklch(0.98 0.01 250);
+  --secondary: oklch(0.94 0.018 252);
+  --secondary-foreground: oklch(0.28 0.045 255);
+  --muted: oklch(0.95 0.012 250);
+  --muted-foreground: oklch(0.5 0.035 255);
+  --accent: oklch(0.93 0.035 260);
+  --accent-foreground: oklch(0.3 0.08 264);
+  --destructive: oklch(0.59 0.21 25);
+  --border: oklch(0.88 0.018 250);
+  --input: oklch(0.86 0.025 250);
+  --ring: oklch(0.65 0.15 264);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+}
+
+.message-markdown {
+  overflow-wrap: anywhere;
+}
+
+.message-markdown :is(p, ul, ol, pre, blockquote, table) {
+  margin-block: 0.75rem;
+}
+
+.message-markdown :is(p, ul, ol, pre, blockquote, table):first-child {
+  margin-top: 0;
+}
+
+.message-markdown :is(p, ul, ol, pre, blockquote, table):last-child {
+  margin-bottom: 0;
+}
+
+.message-markdown ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+
+.message-markdown ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+
+.message-markdown :not(pre) > code {
+  border-radius: 0.35rem;
+  background: color-mix(in oklab, var(--muted) 80%, transparent);
+  padding: 0.15rem 0.35rem;
+  font-size: 0.9em;
+}
+
+.message-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .message-markdown {
+    font-size: 0.95rem;
+  }
+}
